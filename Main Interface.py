@@ -41,11 +41,6 @@ Any reference to the Kivy back end or the Kivy code relates to the code held wit
 import time
 
 import can
-import sys
-import can_logging_to_sdcard
-from can import Message
-
-from datetime import datetime
 from threading import Thread
 import os
 
@@ -56,17 +51,12 @@ from kivy.core.window import Window
 from kivy.properties import NumericProperty, ListProperty, StringProperty
 from kivy.uix.screenmanager import ScreenManager, Screen
 
-#from wordpress_xmlrpc.methods import posts
-#from wordpress_xmlrpc import Client
-#from wordpress_xmlrpc import WordPressPage
-
 # The conversion factor is used to convert the raw numerical data into degrees to move the needle
 # default is 1.8 which works for a 0-100 slider, this is because when the needle is pointing straight up (at the 50) it is at 0˚ and since
 # the maximum angles for the needle will be 50 points on the dial either way to get this as +/- 90˚ you multiply the value by 1.8.
 # To put it more simply 50 * 1.8 = 90, the needle has to be able to rotate 180˚ total and the gauge is from 0-100, 100 * 1.8 = 180
 # cf = conversion_factor
 cf = 1.8
-
 # The delay is how long the app goes without user input before it changes to the screen saver
 delay = 1000
 
@@ -86,9 +76,9 @@ def msg_receiving():
     numTank = int(sys.argv[5])
     volumeStr = sys.argv[6]'''
 
-    outDir = "/home/pi/out/hydraFL"  # "/home/pi/rough/logger-rbp-python-out/lomack150_"
+    outDir = "/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/out/hydraFL"  # "/home/pi/rough/logger-rbp-python-out/lomack150_"
     numCAN = 1  # 2
-    bRate = 250000  # 250000 or 500000
+    bRate = 500000  # 250000 or 500000
     CANtype = "RBP15"  # OCAN or ACAN
     numTank = 5
     volumeStr = "202,202,202,202,148"
@@ -356,12 +346,15 @@ def connectToLogger(canV):
     """
     Connect to Bus
     """
+
+    app = App.get_running_app()
+
     try:
-        bus = can.interface.Bus(channel=canV, bustype='socketcan_native')
+        app.bus = can.interface.Bus(channel=canV, bustype='socketcan_native')
     except OSError:
         print('Cannot find PiCAN board.')
         exit()
-    return bus
+    return app.bus
 
 
 def setCANbaudRate(numCAN, bRate):
@@ -399,7 +392,6 @@ def hydrogenMassEq2(pressureV, tempV, volumeV):
 
     print(HmassTotalKg)
 
-
     return HmassTotalKg
 
 
@@ -414,24 +406,6 @@ def enforceMaxV(origV, maxV):
 
 
 #################################################################################################################
-
-
-def content_upload(dt):
-    # content = input('Please enter the content of your post\
-
-    app = App.get_running_app()
-
-    my_site = Client('https://hydratester.wordpress.com/xmlrpc.php', 'xavier82a6ba0827', 'Hydratester')
-
-    data = [app.temp0, app.temp1, app.temp2, app.temp3, app.temp4, app.temp5, app.hMass, app.press1,
-            app.press2, app.mode_num]
-
-    page = WordPressPage()
-    page.title = 'Truck Engine Live Feed'
-    page.content = app.content_former(data)
-    page.post_status = 'publish'
-    page.id = 49
-    my_site.call(posts.EditPost(page.id, page))
 
 # This function checks the value read by modeReader and checks what it is -- if it is 0 or 1 it sets the engine_mode string variable to 'H2\nMODE' which is just H2 MODE on separate lines, otherwise it sets the variable
 # to 'DIESEL\nMODE'. It also then changes the color of the text to either green or grey
@@ -471,31 +445,66 @@ def callback(dt):
     app.root.current = 'third'
 
 
-# This is the menu screen that the app defaults to and provides buttons to access all of the information screens
-class MainMenu(Screen):
+def message_setup(dt):
     app = App.get_running_app()
 
+    # Creates the CAN message --> arbitration_id = destination address
+    try:
+        app.toggle_msg = can.Message(arbitration_id=0xCFF41F2, data=app.msg_data)
+    except AttributeError:
+        bus_status = 0
+    else:
+        bus_status = 1
+
+    while bus_status == 0:
+        try:
+            app.toggle_msg = can.Message(arbitration_id=0xCFF41F2, data=app.msg_data)
+        except AttributeError:
+            bus_status = 0
+        else:
+            bus_status = 1
+        print(bus_status)
+
+
+    # Sends the CAN message to whatever 'bus' was set to every period in seconds (0.25 = 250ms)
+    try:
+        app.task = app.bus.send_periodic(app.toggle_msg, 0.25)
+        if not isinstance(app.task, can.ModifiableCyclicTaskABC):
+            print("This interface doesn't seem to support modification")
+            app.task.stop()
+            return
+    except AttributeError:
+        pass
+
+
+
+
+# This is the menu screen that the app defaults to and provides buttons to access all of the information screens
+class MainMenu(Screen):
+
+    # When the user enters the page a transition to the screen-saver is scheduled for delay seconds from now
     def on_enter(self):
         Clock.schedule_once(callback, delay)
 
-    # This is another one of the really cool Kivy functions that does something/listens for something automatically. As the name of the function suggests this listens for any user touch input (touch screen, mouse click, etc)
-    # and then runs the code inside. The if statement in it checks to make sure that the collide_point (where the touch happened) is within the screen area of the app
+    # Listens for the touch up on the screen
     def on_touch_up(self, touch):
-        if self.collide_point(*touch.pos):
-            # Clock.unschedule(FUNCTION) just cancels whatever scheduling was put onto the designated function. It is used here as the screen saver delay tool. When the user touches the screen the function that changes
-            # the screen to the screen saver will be unscheduled and then rescheduled by the Clock call below this, this basically just resets the delay timer on the screen saver
-            Clock.unschedule(callback)
-            Clock.schedule_once(callback, delay)
+        # Clock.unschedule(FUNCTION) just cancels whatever scheduling was put onto the designated function. It is used here as the screen saver delay tool. When the user touches the screen the function that changes
+        # the screen to the screen saver will be unscheduled and then rescheduled by the Clock call below this, this basically just resets the delay timer on the screen saver
+        Clock.unschedule(callback)
+        Clock.schedule_once(callback, delay)
 
+    # Unschedules the screensaver when leaving the current screen
     def on_leave(self):
         Clock.unschedule(callback)
 
 
 # This is the screen saver page -- for its design/visual setup look in the Kivy back end code (in the 'root_widget')
 class ScreenSaver(Screen):
+    # Sets the speed that the logo will travel at based on the size of the screen
     velocity = ListProperty([Window.width / 200, Window.height / 200])
     screen_pos = ListProperty([0, 0])
 
+    # Updates the position of the Hydra logo (animates it)
     def update(self, dt):
         self.screen_pos[0] += self.velocity[0]
         self.screen_pos[1] += self.velocity[1]
@@ -543,9 +552,8 @@ class FuelGaugeLayout(Screen):
 
     # Kivy function runs code when the user touches and releases on the screen. This is the delay reset for the screen saver
     def on_touch_up(self, touch):
-        if self.collide_point(*touch.pos):
-            Clock.unschedule(callback)
-            Clock.schedule_once(callback, delay)
+        Clock.unschedule(callback)
+        Clock.schedule_once(callback, delay)
 
     # Same as in the other classes
     def on_leave(self):
@@ -556,8 +564,6 @@ class FuelGaugeLayout(Screen):
 class FuelInjectionLayout(Screen):
     # This variable is what is used to display injection reading at the bottom of the page, is a string property to allow the Kivy back end to read it even when it changes
     hInjection = StringProperty()
-
-    # This variable is used in the equation for how many degrees the injection dial should be turned (it has the same value/number has hInjection but is a numeric property so that it can be used in an equation)
 
     # Same as in the other classes, calls functions as the user enters the page. Upon_entering has the same function as upon_entering_mass and just calls the functions after a 0.5s
     # delay to avoid any issues
@@ -570,9 +576,8 @@ class FuelInjectionLayout(Screen):
 
     # Kivy function that runs code after the user touches the screen
     def on_touch_up(self, touch):
-        if self.collide_point(*touch.pos):
-            Clock.unschedule(callback)
-            Clock.schedule_once(callback, delay)
+        Clock.unschedule(callback)
+        Clock.schedule_once(callback, delay)
 
     # This function opens the file that contains the data about the injection rate, reads it and sets it to some variables
     def injection_reader(self, dt):
@@ -593,9 +598,8 @@ class ErrorPage(Screen):
 
     # Same as in the other classes
     def on_touch_up(self, touch):
-        if self.collide_point(*touch.pos):
-            Clock.unschedule(callback)
-            Clock.schedule_once(callback, delay)
+        Clock.unschedule(callback)
+        Clock.schedule_once(callback, delay)
 
     # Same as in the other classes, apart from the bottom bit
     def code_checker(self, dt):
@@ -626,28 +630,47 @@ class ErrorPage(Screen):
 
     def on_leave(self):
         Clock.unschedule(self.code_checker)
+        Clock.unschedule(callback)
 
 
 # This is the screen that displays the temperatures and pressures of the tanks and lines from the tanks
 class TankTempPress(Screen):
-    # Since the information that we need is in a block of text that is in the middle of the line I set the block of text to temptempo and then grab the specific temps from within
-    # that block as those are then separated by ';'
+
+    # Nothing fancy happens on this page, all of the data collection/displaying is handled by the main app class in addition to the kivy code file (fuelgauge.kv)
+
+    def on_enter(self):
+        Clock.schedule_once(callback, delay)
+
+    def on_touch_up(self, touch):
+        Clock.unschedule(callback)
+        Clock.schedule(callback, delay)
+
+    def on_leave(self):
+        Clock.unschedule(callback)
+
     pass
 
 
-# This is the screen manager that holds all of the other pages together (fuelgauge, fuelinjection, screensaver)
+# This is the screen manager that holds all of the other pages together
 class MyScreenManager(ScreenManager):
     pass
 
 
+# Screen that shows the leakage rate
 class DynamicLeak(Screen):
+    # The numerical value for calculating the needle rotation
     leakAmt = NumericProperty()
+    # The value that displays at the bottom of the screen
     leak_display = StringProperty()
 
     def on_enter(self):
         Clock.schedule_once(self.leakReader, 0)
         Clock.schedule_interval(callback, delay)
         Clock.schedule_interval(self.leakReader, 0.2)
+
+    def on_touch_up(self, touch):
+        Clock.unschedule(callback)
+        Clock.schedule_once(callback, delay)
 
     def leakReader(self, dt):
         app = App.get_running_app()
@@ -660,14 +683,27 @@ class DynamicLeak(Screen):
         Clock.unschedule(callback)
 
 
+# This is the lock screen where technicians can lock or unlock the engine mode toggle button -- accessed by hitting the engine mode descriptor
 class ModeLocking(Screen):
+    # This is the correct password/pin
     password = '1234'
 
+    # This is the descriptor text that says either 'Locked' or 'Unlocked'
     status = StringProperty()
 
     def on_enter(self):
+        # When the user enters the screen checks the current lock status
         Clock.schedule_once(self.launch_status)
+        Clock.schedule_once(callback, delay)
 
+    def on_touch_up(self, touch):
+        Clock.unschedule(callback)
+        Clock.schedule_once(callback, delay)
+
+    def on_leave(self):
+        Clock.unschedule(callback)
+
+    # Checks the current lock status and sets the descriptor text accordingly
     def launch_status(self, dt):
         app = App.get_running_app()
 
@@ -676,33 +712,38 @@ class ModeLocking(Screen):
         else:
             self.status = 'Locked'
 
-    # insert code to check if it is locked or not
-
+    # Sets the default color of the submit button
     wrong_password_ind = ListProperty([0, 0, 0.8, 1])
 
+    # Called when the user submits their password
     def code_tester(self, text):
 
+        # Allows this function to reference variables/functions from the main app class
         app = App.get_running_app()
 
+        # Checks if the entered password matches the correct one
         if text == self.password:
 
+            # Changes the color of the submit button to Green in order to show the correct password was entered
             self.wrong_password_ind = [0, 1, 0, 1]
 
+            # Checks the current lock status
             if app.lock_status == '1':
+                # Toggles the lock status to unlocked
                 app.lock_status = '0'
                 self.status = 'Unlocked'
-                print(self.status)
             else:
+                # Toggles the lock status to locked
                 app.lock_status = '1'
                 self.status = 'Locked'
-                print(self.status)
 
+            # Writes the current lock status to lock_file.txt to save it across sessions
             fin = open("lock_file.txt", "wt")
             fin.write(app.lock_status)
             fin.close()
 
         else:
-
+            # Changes the color of the submit button to Red in order to show an incorrect password was entered
             self.wrong_password_ind = [1, 0, 0, 1]
 
 
@@ -712,10 +753,11 @@ class FuelGaugeApp(App):
     error_code_list = []
     # The error_list is the list of all the error messages
     error_list = []
+    # Just initializing the engine mode variable
     mode_num = str
 
-    # Opens the NIRA error code file
-    with open('/Display/2018.08.13 - NIRA J1979 Fault Messages.txt',
+    # Opens the NIRA error code file and saves th error codes to error_code_list
+    with open('/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/2018.08.13 - NIRA J1979 Fault Messages.txt',
               'r') as f:
         lines = f.readlines()
         # Goes line by line and adds the error codes to the 'error_code_list' list
@@ -723,8 +765,8 @@ class FuelGaugeApp(App):
             error_code_list.append(l.split(',')[0])
         f.close()
 
-    # Opens the NIRA error code file
-    with open('/Display/2018.08.13 - NIRA J1979 Fault Messages.txt',
+    # Opens the NIRA error code file and saves the fault code descriptions to error_list
+    with open('/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/2018.08.13 - NIRA J1979 Fault Messages.txt',
               'r') as f:
         lines = f.readlines()
         # Goes line by line and adds the error messages to the 'error_list' list
@@ -732,119 +774,128 @@ class FuelGaugeApp(App):
             error_list.append(l.split(',')[2])
         f.close()
 
-    if os.path.isfile("lock_file.txt"):
-        fin = open("lock_file.txt", "rt")
+    # lock_file.txt and fuel_file.txt contains and holds the lock and engine mode statuses so they are saved after the screen is turned off
+    # Tries to open the file -- if it isn't there it creates it with a default value
+    if os.path.isfile("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt"):
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt", "rt")
         lock_status = fin.read()
         fin.close()
     else:
-        fin = open("lock_file.txt", "w")
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt", "w")
         fin.write('0')
         lock_status = '0'
         fin.close()
 
-    if os.path.isfile("fuel_file.txt"):
-        fin = open("fuel_file.txt", "rt")
+    if os.path.isfile("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt"):
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt", "rt")
         mode_num = fin.read()
         fin.close()
     else:
-        fin = open("fuel_file.txt", "w")
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt", "w")
         fin.write('2')
         mode_num = '2'
         fin.close()
 
+    if mode_num == '2':
+        msg_data = [1]
+    else:
+        msg_data = [0]
+
+    try:
+        bus = can.interface.Bus(channel='can0', bustype='socketcan_native')
+    except OSError:
+        print('Cannot find PiCAN board.')
+        pass
+
+
+    # These are all of the data values received and decoded by Calvin's code
     temp0 = StringProperty()
     temp1 = StringProperty()
     temp2 = StringProperty()
     temp3 = StringProperty()
     temp4 = StringProperty()
     temp5 = StringProperty()
-
-    # Same as the methods to get the temperatures
     press1 = StringProperty()
     press2 = StringProperty()
-
     Hleakage = NumericProperty()
     HinjectionV = NumericProperty()
+    # The 0 inside the brackets is providing an initial value for hMass -- required or else something breaks
     hMass = NumericProperty(0)
-    # The truck's engine mode (Hydrogen or Diesel) will be collected by Calvin's code as one of 3 numbers: 0, 1, or 2. 0 and 1 mean that the truck is in Hydrogen mode whereas 2 means it is in diesel mode
-    # this variable stores this number from the text file
+
     # error_code is a string variable that is used to temporarily store the current error code taken from the text document it is stored in. It is a string because after coming from the .txt the data is a string and
     # must be converted into a float or int to be used as a number
     error_code = StringProperty()
+
     # error_base is the text that is displayed in the top left hand of most screens -- if there is a fault this variable becomes "FAULT" and then the error code and flips between them
     # It is a StringProperty() which is a Kivy variable type the essentially tells the Kivy back end code to keep checking what its value is/if it changes
     error_base = StringProperty()
+
     # Similar to error_base this is a string property and will contain the text to be displayed in the top right of most screens. This text tells the user if the truck is in H2 mode or Diesel mode
     engine_mode = StringProperty()
+
     # In kivy colors are lists (rgba) and to send a color from the python code to the Kivy back end it must be a list property so that Kivy understands what it is receiving. This is needed since when the truck
     # is in H2 mode the text saying this is Green, whereas if the truck is in Diesel mode the text saying that is in Grey
     mode_color = ListProperty()
 
     # Grabs the global variable and stores it as a local one that the Kivy back end can read
+    # The conversion factor is for changing the discrete data values into a specific angle of rotation for the gauges
     conversion_factor = cf
 
-    # Clock.schedule_once(FUNCTION, DELAY) is a special Kivy function that calls the specified function after the specified delay. What makes this tool so great is that it isn't a hang up
-    # and just runs in parallel to everything else meaning that if I want to call a function after a delay (like a screen saver) it won't stop everything else in the app
-    # Clock.schedule_interval(FUNCTION, DELAY) is very similar to Clock.schedule_once however instead of only calling the desired function once after the delay it instead calls the function
-    # every time the delay amount of time passes. Very useful for functions that need to for example check a file every few seconds to read the fuel level
+    toggle_msg = can.Message()
+    msg_data = []
+
     # This calls errorMsg every 2 seconds to constantly change the error notification text from "FAULT" to the error code, or if there is no error it sets the text to blank
     Clock.schedule_interval(errorMsg, 2)
-    # This calls the callback function after the specified delay, the callback function is what changes the page to the screen saver and the delay can be changed at the top of the file since it is
-    # used by almost all of the pages
-    # This calls the modeReader function right away when the user enters this page to check what the current engine mode is
+
+    Clock.schedule_once(message_setup)
 
     # This checks the value of the engine mode number every 2 seconds and changes the notification text if needed
     Clock.schedule_interval(truckEngineMode, 2)
-
-    #Clock.schedule_interval(content_upload, 120)
-
+    # Starts Calvin's CAN message reading code in another thread so that it is constantly reading while the display is active
     a = Thread(target=msg_receiving)
     a.start()
+
 
     # Runs the screen manager that sets everything in motion
     def build(self):
         return MyScreenManager()
 
+    # Called when the user hits the 'Truck Engine Mode' button
     def ModeSender(self):
 
+        # If the display is unlocked (lock_status == '0') it checks to see what the current engine mode is
         if self.lock_status == '0':
 
-            try:
-                bus = can.interface.Bus(channel='can0', bustype='socketcan_native')
-
-            except OSError:
-                print('Cannot find PiCAN board.')
-                return ()
-
+            # Depending on the current mode the CAN msg data is set to either 1 or 0 (for H2 mode and Diesel mode respectively)
             if self.mode_num == '2':
 
-                msg_data = '0x01'
+                self.msg_data = [1]
+                # Then it changes what the current mode number is (ie. it toggles the engine mode for the next time the button is pressed)
                 self.mode_num = '0'
 
             else:
-                msg_data = '0x00'
+                self.msg_data = [0]
                 self.mode_num = '2'
 
-            fin = open("fuel_file.txt", "wt")
-            fin.write(self.mode_num)
-            fin.close()
+            try:
+                self.task.modify_data(self.toggle_msg)
+            except AttributeError:
+                return
+            else:
+                # Writing the current engine mode to a text file so that it is saved when the display is shut off
+                fin = open("fuel_file.txt", "wt")
+                fin.write(self.mode_num)
+                fin.close()
+                self.toggle_msg = can.Message(arbitration_id=0xCFF41F2, data=self.msg_data)
 
-            toggle_msg = can.Message(arbitration_id=0xCFF41F2, data=msg_data)
-            # add functionality for changing the source address
 
-            bus.send_periodic(toggle_msg, 0.25)
-
-    def content_former(self, data):
+    # This is for uploading the truck live feed to a wordpress site -- leaving here just in case its needed again
+    '''def content_former(self, data):
         i = 0
         vals = []
         formed_content = ''
         data_titles = ['Date: ', 'H2 Mass: ', 'RPM: ', 'H2 Rail Pressure:', 'Tank Pressure:', 'Tank 1 Temp: ',
                        'Tank 2 Temp: ', 'Tank 3 Temp: ', 'Tank 4 Temp: ', 'Tank 5 Temp: ']
-
-        '''with open("hydraFL_RBP16_liveUpdate-Hmass.txt", 'r') as file:
-            first_line = file.readline()
-            for last_line in file:
-                pass'''
 
         while i < 10:
             vals.append(str(data_titles[i]) + ' ' + str(data[i]) + '\n')
@@ -853,13 +904,18 @@ class FuelGaugeApp(App):
 
         print(formed_content)
 
-        return formed_content
+        return formed_content'''
 
 
 # Makes everything start
 if __name__ == '__main__':
+    # Tells KIVY to open in fullscreen mode
     Config.set('graphics', 'fullscreen', '0')
+    # Tells KIVY what keyboard to use (systemanddock is both physical and onscreen keyboards)
     Config.set('kivy', 'keyboard_mode', 'systemanddock')
+    # Tells KIVY to use the custom keyboard layout named pinpad.json and located in the kivy data files
     Config.set('kivy', 'keyboard_layout', 'pinpad')
+    # Actually sends all of the previously set config options to the KIVY config controller
     Config.write()
+    # Runs the app class that controls the screen
     FuelGaugeApp().run()
