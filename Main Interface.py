@@ -757,7 +757,7 @@ class FuelGaugeApp(App):
     mode_num = str
 
     # Opens the NIRA error code file and saves th error codes to error_code_list
-    with open('Display/2018.08.13 - NIRA J1979 Fault Messages.txt',
+    with open('/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/2018.08.13 - NIRA J1979 Fault Messages.txt',
               'r') as f:
         lines = f.readlines()
         # Goes line by line and adds the error codes to the 'error_code_list' list
@@ -766,7 +766,7 @@ class FuelGaugeApp(App):
         f.close()
 
     # Opens the NIRA error code file and saves the fault code descriptions to error_list
-    with open('Display/2018.08.13 - NIRA J1979 Fault Messages.txt',
+    with open('/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/2018.08.13 - NIRA J1979 Fault Messages.txt',
               'r') as f:
         lines = f.readlines()
         # Goes line by line and adds the error messages to the 'error_list' list
@@ -776,22 +776,22 @@ class FuelGaugeApp(App):
 
     # lock_file.txt and fuel_file.txt contains and holds the lock and engine mode statuses so they are saved after the screen is turned off
     # Tries to open the file -- if it isn't there it creates it with a default value
-    if os.path.isfile("Display/lock_file.txt"):
-        fin = open("Display/lock_file.txt", "rt")
+    if os.path.isfile("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt"):
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt", "rt")
         lock_status = fin.read()
         fin.close()
     else:
-        fin = open("Display/lock_file.txt", "w")
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt", "w")
         fin.write('0')
         lock_status = '0'
         fin.close()
 
-    if os.path.isfile("Display/fuel_file.txt"):
-        fin = open("Display/fuel_file.txt", "rt")
+    if os.path.isfile("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt"):
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt", "rt")
         mode_num = fin.read()
         fin.close()
     else:
-        fin = open("Display/fuel_file.txt", "w")
+        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt", "w")
         fin.write('2')
         mode_num = '2'
         fin.close()
@@ -855,6 +855,12 @@ class FuelGaugeApp(App):
     a = Thread(target=msg_receiving)
     a.start()
 
+    if (mode_num == '0') or (mode_num == '1'):
+        engine_mode = 'H2\nMODE'
+        mode_color = [0, 1, 0, 1]
+    else:
+        engine_mode = 'DIESEL\nMODE'
+        mode_color = [0.431, 0.431, 0.431, 1]
 
     # Runs the screen manager that sets everything in motion
     def build(self):
