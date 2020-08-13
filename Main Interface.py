@@ -76,7 +76,7 @@ def msg_receiving():
     numTank = int(sys.argv[5])
     volumeStr = sys.argv[6]'''
 
-    outDir = "/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/out/hydraFL"  # "/home/pi/rough/logger-rbp-python-out/lomack150_"
+    outDir = "Display/out/hydraFL"  # "/home/pi/rough/logger-rbp-python-out/lomack150_"
     numCAN = 1  # 2
     bRate = 500000  # 250000 or 500000
     CANtype = "RBP15"  # OCAN or ACAN
@@ -757,7 +757,7 @@ class FuelGaugeApp(App):
     mode_num = str
 
     # Opens the NIRA error code file and saves th error codes to error_code_list
-    with open('/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/2018.08.13 - NIRA J1979 Fault Messages.txt',
+    with open('Display/2018.08.13 - NIRA J1979 Fault Messages.txt',
               'r') as f:
         lines = f.readlines()
         # Goes line by line and adds the error codes to the 'error_code_list' list
@@ -766,7 +766,7 @@ class FuelGaugeApp(App):
         f.close()
 
     # Opens the NIRA error code file and saves the fault code descriptions to error_list
-    with open('/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/2018.08.13 - NIRA J1979 Fault Messages.txt',
+    with open('Display/2018.08.13 - NIRA J1979 Fault Messages.txt',
               'r') as f:
         lines = f.readlines()
         # Goes line by line and adds the error messages to the 'error_list' list
@@ -776,22 +776,22 @@ class FuelGaugeApp(App):
 
     # lock_file.txt and fuel_file.txt contains and holds the lock and engine mode statuses so they are saved after the screen is turned off
     # Tries to open the file -- if it isn't there it creates it with a default value
-    if os.path.isfile("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt"):
-        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt", "rt")
+    if os.path.isfile("Display/lock_file.txt"):
+        fin = open("Display/lock_file.txt", "rt")
         lock_status = fin.read()
         fin.close()
     else:
-        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/lock_file.txt", "w")
+        fin = open("Display/lock_file.txt", "w")
         fin.write('0')
         lock_status = '0'
         fin.close()
 
-    if os.path.isfile("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt"):
-        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt", "rt")
+    if os.path.isfile("Display/fuel_file.txt"):
+        fin = open("Display/fuel_file.txt", "rt")
         mode_num = fin.read()
         fin.close()
     else:
-        fin = open("/Users/Xavier/Desktop/Kivystuff/Truck Monitoring/Truck Screen/fuel_file.txt", "w")
+        fin = open("Display/fuel_file.txt", "w")
         fin.write('2')
         mode_num = '2'
         fin.close()
